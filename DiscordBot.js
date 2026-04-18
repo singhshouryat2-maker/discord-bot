@@ -58,3 +58,77 @@ CREATE TABLE IF NOT EXISTS duel_history (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 `);
+const commands = [
+  new SlashCommandBuilder()
+    .setName('duel')
+    .setDescription('Challenge another player to a quickdraw duel')
+    .addUserOption(option =>
+      option
+        .setName('opponent')
+        .setDescription('The player you want to duel')
+        .setRequired(true)
+    ),
+  new SlashCommandBuilder()
+    .setName('leaderboard')
+    .setDescription('Show the top duelists'),
+  new SlashCommandBuilder()
+    .setName('stats')
+    .setDescription('Show your duel stats'),
+  new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('Check if the bot is online')
+];
+
+const rest = new REST({ version: '10' }).setToken(TOKEN);
+
+const activeDuels = new Map();
+const busyUsers = new Map();
+
+function registerCommands() {
+  return rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands.map(command => command.toJSON()) }
+  );
+}
+
+function getPlayer(user) {
+  let player = db.prepare('SELECT * FROM players WHERE user_id = ?').get(user.id);
+
+  if (!player) {
+    db.prepare(`
+      INSERT INTO players (user_id, username)
+      VALUES (?, ?)
+    `).run(user.id, user.username);
+
+    player = db.prepare('SELECT * FROM players WHERE user_id = ?').get(user.id);
+  } else if (player.username !== user.username) {
+    db.prepare(`
+      UPDATE players
+      SET username = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+    `).run(user.username, user.id);
+
+    player = db.prepare('SELECT * FROM players WHERE user_id = ?').get(user.id);
+  }
+
+  return player;
+}
+
+function addXP(user, amount) {
+  const player = getPlayer(user);
+  let xp = player.xp + amount;
+  let level = player.level;
+
+  while (xp >= level * 100) {
+    xp -= level * 100;
+    level += 1;
+  }
+
+  db.prepare(`
+    UPDATE players
+    SET xp = ?, level = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+  `).run(xp, level, user.id);
+
+  return { xp, level };
+}

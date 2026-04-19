@@ -132,3 +132,67 @@ function addXP(user, amount) {
 
   return { xp, level };
 }
+function addCoins(user, amount) {
+  db.prepare(`
+    UPDATE players
+    SET coins = coins + ?, updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+  `).run(amount, user.id);
+}
+
+function setBadge(user, badge) {
+  db.prepare(`
+    UPDATE players
+    SET badge = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+  `).run(badge, user.id);
+}
+
+function markBusy(userId, duelId) {
+  busyUsers.set(userId, duelId);
+}
+
+function clearBusy(duel) {
+  for (const player of duel.players) {
+    if (busyUsers.get(player.id) === duel.id) {
+      busyUsers.delete(player.id);
+    }
+  }
+}
+
+function isBusy(userId) {
+  return busyUsers.has(userId);
+}
+
+function createInviteRow(duelId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`accept_${duelId}`)
+      .setLabel('Accept Duel')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`decline_${duelId}`)
+      .setLabel('Decline')
+      .setStyle(ButtonStyle.Secondary)
+  );
+}
+
+function createShootRow(duelId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`shoot_${duelId}`)
+      .setLabel('SHOOT')
+      .setStyle(ButtonStyle.Danger)
+  );
+}
+
+function averageReaction(player) {
+  if (!player.recorded_shots) return null;
+  return Math.round(player.total_reaction_ms / player.recorded_shots);
+}
+
+function syncPlayers(users) {
+  for (const user of users) {
+    getPlayer(user);
+  }
+}

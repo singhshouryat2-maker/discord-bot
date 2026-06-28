@@ -135,3 +135,41 @@ const commands = [
     .setName('ping')
     .setDescription('Check if the bot is online')
 ];
+
+const rest = new REST({ version: '10' }).setToken(TOKEN);
+ 
+// activeDuels: duelId -> duel state object
+const activeDuels = new Map();
+// busyUsers: userId -> duelId (prevents joining/being challenged into multiple duels)
+const busyUsers = new Map();
+ 
+function registerCommands() {
+  return rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands.map(command => command.toJSON()) }
+  );
+}
+ 
+// ---------------------------------------------------------------------------
+// Player / DB helpers
+// ---------------------------------------------------------------------------
+ 
+function getPlayer(user) {
+  let player = db.prepare('SELECT * FROM players WHERE user_id = ?').get(user.id);
+ 
+  if (!player) {
+    db.prepare(`
+      INSERT INTO players (user_id, username)
+      VALUES (?, ?)
+    `).run(user.id, user.username);
+ 
+    player = db.prepare('SELECT * FROM players WHERE user_id = ?').get(user.id);
+  } else if (player.username !== user.username) {
+    db.prepare(`
+      UPDATE players
+      SET username = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+    `).run(user.username, user.id);
+ 
+    player = db.prepare('SELECT * FROM players WHERE user_id = ?').get(user.id);
+  }

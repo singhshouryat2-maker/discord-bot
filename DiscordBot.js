@@ -173,3 +173,40 @@ function getPlayer(user) {
  
     player = db.prepare('SELECT * FROM players WHERE user_id = ?').get(user.id);
   }
+
+   return player;
+}
+ 
+function addXP(user, amount) {
+  const player = getPlayer(user);
+  let xp = player.xp + amount;
+  let level = player.level;
+ 
+  while (xp >= level * 100) {
+    xp -= level * 100;
+    level += 1;
+  }
+ 
+  db.prepare(`
+    UPDATE players
+    SET xp = ?, level = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+  `).run(xp, level, user.id);
+ 
+  const leveledUp = level > player.level;
+  return { xp, level, leveledUp };
+}
+ 
+function addCoins(user, amount) {
+  db.prepare(`
+    UPDATE players
+    SET coins = MAX(0, coins + ?), updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+  `).run(amount, user.id);
+}
+ 
+function recordWin(user, reactionMs) {
+  const player = getPlayer(user);
+  const newStreak = player.current_streak + 1;
+  const bestStreak = Math.max(player.best_streak, newStreak);
+  const fastest = (player.fastest_ms === null || reactionMs < player.fastest_ms)

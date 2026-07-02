@@ -210,3 +210,92 @@ function recordWin(user, reactionMs) {
   const newStreak = player.current_streak + 1;
   const bestStreak = Math.max(player.best_streak, newStreak);
   const fastest = (player.fastest_ms === null || reactionMs < player.fastest_ms)
+
+   ? reactionMs
+    : player.fastest_ms;
+ 
+  db.prepare(`
+    UPDATE players
+    SET wins = wins + 1,
+        total_duels = total_duels + 1,
+        current_streak = ?,
+        best_streak = ?,
+        fastest_ms = ?,
+        total_reaction_ms = total_reaction_ms + ?,
+        recorded_shots = recorded_shots + 1,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+  `).run(newStreak, bestStreak, fastest, reactionMs, user.id);
+}
+ 
+// Used when a win is awarded without a real reaction time (e.g. opponent
+// false-started). Does NOT touch fastest_ms/average so those stats stay
+// meaningful — only genuine reaction-time wins count toward them.
+function recordWinNoTime(user) {
+  const player = getPlayer(user);
+  const newStreak = player.current_streak + 1;
+  const bestStreak = Math.max(player.best_streak, newStreak);
+ 
+  db.prepare(`
+    UPDATE players
+    SET wins = wins + 1,
+        total_duels = total_duels + 1,
+        current_streak = ?,
+        best_streak = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+  `).run(newStreak, bestStreak, user.id);
+}
+
+function recordLoss(user, reactionMs, { falseStart = false } = {}) {
+  const player = getPlayer(user);
+ 
+  if (falseStart) {
+    db.prepare(`
+      UPDATE players
+      SET losses = losses + 1,
+          total_duels = total_duels + 1,
+          current_streak = 0,
+          false_starts = false_starts + 1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+    `).run(user.id);
+    return;
+  }
+ 
+  const fastest = (reactionMs != null)
+    ? ((player.fastest_ms === null || reactionMs < player.fastest_ms) ? reactionMs : player.fastest_ms)
+    : player.fastest_ms;
+ 
+  db.prepare(`
+    UPDATE players
+    SET losses = losses + 1,
+        total_duels = total_duels + 1,
+        current_streak = 0,
+        fastest_ms = ?,
+        total_reaction_ms = total_reaction_ms + ?,
+        recorded_shots = recorded_shots + ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+  `).run(fastest, reactionMs || 0, reactionMs != null ? 1 : 0, user.id);
+}
+ 
+function logDuelHistory(duel, { winnerId, loserId, resultType }) {
+  db.prepare(`
+    INSERT INTO duel_history (
+      guild_id, channel_id, duel_id, challenger_id, opponent_id,
+      winner_id, loser_id, challenger_reaction_ms, opponent_reaction_ms, result_type
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    duel.guildId,
+    duel.channelId,
+    duel.id,
+    duel.challenger.id,
+    duel.opponent.id,
+    winnerId || null,
+    loserId || null,
+    duel.reactions.get(duel.challenger.id) ?? null,
+    duel.reactions.get(duel.opponent.id) ?? null,
+    resultType
+  );
+}
